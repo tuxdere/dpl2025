@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Arancina Runner</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f7f7f7;
+            font-family: 'Press Start 2P', cursive;
+            text-align: center;
+            color: #333;
+        }
+
+        #game-container {
+            position: relative;
+            border: 3px solid #333;
+            width: 320px;
+            height: 200px;
+            box-shadow: 5px 5px 0px #ccc;
+        }
+
+        canvas {
+            background-color: #fff;
+            display: block;
+            cursor: pointer;
+        }
+
+        #end-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #d9534f;
+            font-size: 24px;
+            text-align: center;
+            text-shadow: 2px 2px #000;
+            line-height: 1.5;
+            pointer-events: none;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Arancina Runner</h1>
+
+    <div id="game-container">
+        <canvas id="gameCanvas" width="320" height="200"></canvas>
+        <div id="end-message" class="hidden">
+            <p>Buon compleanno pasticcino ❤️</p>
+        </div>
+    </div>
+    <p>Tocca lo schermo (o premi Spazio) per saltare!</p>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const endMessage = document.getElementById('end-message');
+
+            // MIGLIORAMENTO: Costanti per una migliore leggibilità e manutenibilità
+            const groundY = canvas.height - 10;
+            const playerHeight = 20;
+            const playerWidth = 20;
+
+            let score = 0;
+            let gameSpeed = 3;
+            let obstacles = [];
+            let gameOver = false;
+            let gameWon = false;
+            let animationFrameId;
+
+            // MIGLIORAMENTO: Logica per la generazione casuale degli ostacoli
+            let obstacleTimer = 0;
+            let randomObstacleInterval = 1000; // Iniziale
+
+            // Giocatore Arancina
+            const player = {
+                x: 50,
+                // MIGLIORAMENTO: Posizione y calcolata in base a groundY
+                y: groundY - playerHeight,
+                width: playerWidth,
+                height: playerHeight,
+                dy: 0,
+                jumpStrength: 8.5,
+                gravity: 0.4,
+                isJumping: false,
+
+                draw() {
+                    ctx.fillStyle = '#FF9800';
+                    // CORREZIONE: Disegna un rettangolo per corrispondere alla hitbox di collisione
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                },
+
+                update() {
+                    if (this.isJumping) {
+                        this.dy += this.gravity;
+                        this.y += this.dy;
+                    }
+
+                    // CORREZIONE: Logica di collisione con il terreno più chiara
+                    if (this.y + this.height > groundY) {
+                        this.y = groundY - this.height;
+                        this.dy = 0;
+                        this.isJumping = false;
+                    }
+                },
+
+                jump() {
+                    if (!this.isJumping && !gameOver) {
+                        this.dy = -this.jumpStrength;
+                        this.isJumping = true;
+                    }
+                }
+            };
+
+            class Obstacle {
+                constructor() {
+                    this.width = 15;
+                    this.height = 30;
+                    this.x = canvas.width;
+                    this.y = groundY - this.height;
+                }
+
+                draw() {
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                }
+
+                update() {
+                    this.x -= gameSpeed;
+                }
+            }
+
+            function handleObstacles(deltaTime) {
+                // MIGLIORAMENTO: Generazione ostacoli a intervalli casuali
+                if (obstacleTimer > randomObstacleInterval) {
+                    obstacles.push(new Obstacle());
+                    // Calcola il prossimo intervallo casuale
+                    randomObstacleInterval = Math.random() * (1200 - 500) + 500; // tra 500ms e 1200ms
+                    obstacleTimer = 0;
+                } else {
+                    obstacleTimer += deltaTime;
+                }
+
+                for (let i = obstacles.length - 1; i >= 0; i--) {
+                    obstacles[i].update();
+                    obstacles[i].draw();
+
+                    // Rilevamento collisioni (ora corretto perché il player è un quadrato)
+                    if (
+                        player.x < obstacles[i].x + obstacles[i].width &&
+                        player.x + player.width > obstacles[i].x &&
+                        player.y < obstacles[i].y + obstacles[i].height &&
+                        player.y + player.height > obstacles[i].y
+                    ) {
+                        gameOver = true;
+                    }
+
+                    if (obstacles[i].x + obstacles[i].width < 0) {
+                        obstacles.splice(i, 1);
+                        score++;
+                        if (score % 5 === 0 && score > 0) {
+                            gameSpeed += 0.2;
+                        }
+                    }
+                }
+            }
+
+            function drawScore() {
+                ctx.fillStyle = '#333';
+                ctx.font = '16px "Press Start 2P"';
+                ctx.fillText('Punti: ' + score, 10, 25);
+            }
+
+            function checkWinCondition() {
+                if (score >= 35 && !gameWon) {
+                    gameWon = true;
+                    gameOver = true;
+                    endMessage.classList.remove('hidden');
+                }
+            }
+            
+            function resetGame() {
+                score = 0;
+                gameSpeed = 3;
+                obstacles = [];
+                gameOver = false;
+                gameWon = false;
+                player.y = groundY - player.height;
+                player.dy = 0;
+                player.isJumping = false;
+                obstacleTimer = 0;
+                endMessage.classList.add('hidden');
+                // Riavvia il loop di gioco
+                lastTime = 0; // Resetta il tempo per il deltaTime
+                gameLoop();
+            }
+
+            function showGameOverScreen() {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'white';
+                ctx.font = '20px "Press Start 2P"';
+                ctx.textAlign = 'center';
+                ctx.fillText('Game Over', canvas.width / 2, canvas.height / 2 - 20);
+                ctx.font = '12px "Press Start 2P"';
+                ctx.fillText('Tocca per riavviare', canvas.width / 2, canvas.height / 2 + 20);
+                ctx.textAlign = 'left'; // Ripristina l'allineamento
+            }
+            
+            let lastTime = 0;
+            function gameLoop(timestamp) {
+                // MIGLIORAMENTO: Ferma il loop se il gioco è finito
+                if (gameOver) {
+                    if (!gameWon) {
+                        showGameOverScreen();
+                    }
+                    cancelAnimationFrame(animationFrameId); // Interrompe le chiamate future
+                    return;
+                }
+                
+                // Calcola il deltaTime per rendere il movimento indipendente dal framerate
+                let deltaTime = timestamp - lastTime;
+                lastTime = timestamp;
+                if (!deltaTime) deltaTime = 16; // Valore di fallback al primo frame
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Disegna il terreno
+                ctx.strokeStyle = '#333';
+                ctx.beginPath();
+                ctx.moveTo(0, groundY);
+                ctx.lineTo(canvas.width, groundY);
+                ctx.stroke();
+
+                player.update();
+                player.draw();
+
+                handleObstacles(deltaTime);
+                drawScore();
+                checkWinCondition();
+
+                animationFrameId = requestAnimationFrame(gameLoop);
+            }
+
+            // --- EVENT LISTENERS ---
+            function handleInteraction(event) {
+                event.preventDefault();
+                if (gameOver) {
+                    resetGame();
+                } else {
+                    player.jump();
+                }
+            }
+            
+            document.body.addEventListener('keydown', (e) => {
+                if (e.code === 'Space') handleInteraction(e);
+            });
+            // Usa 'click' invece di 'mousedown' per evitare riavvii accidentali su doppio click
+            document.body.addEventListener('click', handleInteraction);
+            document.body.addEventListener('touchstart', handleInteraction);
+
+            gameLoop(0); // Avvia il gioco
+        });
+    </script>
+</body>
+</html>
